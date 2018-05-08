@@ -13,25 +13,18 @@ Each message has the following format:
 
 `T`|`id`|`len`|`payload`
 :-:|:--:|:---:|:-------:
- 1 | 2  |  2  |   len
+ 1 | 8  |  8  |   len
 
-`T` - Type of message
+`T` - Type of message. It is one byte indicating 
 
-`C`|`X`|`X`|`X`|`X`|`X`|`P`|`R`
-:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:
- 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0
+ - 0: Request - This is used by upper layer for making request.
+ - 1: Response - This is used by upper layer for making response.
+ - 2: Ping - This is used to check active connection.
+ - 3: Pong - This is used internally to reply ping.
 
-`R`: This is used to indicate initiator or terminator of the dialog.
+`id` - Id of the message. All the messages of the same dialog must have same id. Initiator peer is responsible to choose a unique id.
 
-`X`: Unused. Must be zero or else protocol violation occurs.
-
-`P`: This is used by this layer for sending and receiving ping request and response to identify timeout connections.
-
-`C`: This is used to indicate continuation of any message when it exceeds length. Continuation must be added all the messages except the last one which indicates the end of the message.
-
-`id` - Id of the message. All the messages of the same dialog must have same id. Initiator peer is responsible to choose a unique Id.
-
-`len` - Length of the payload in two bytes. For larger messages continuation is used.
+`len` - Length of the payload in eight bytes.
 
 `payload` - Data sent by upper layer (Sim Layer).
 

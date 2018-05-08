@@ -1,0 +1,9 @@
+[package]
+name = "simproto"
+version = "0.1.0"
+authors = ["arjun <arj1singh@gmail.com>"]
+
+[dependencies]
+bytes = "0.4"
+futures = "0.1"
+tokio-io = "0.1"
