@@ -24,92 +24,59 @@ impl Handler {
         F: FnMut(Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static,
         A: AsyncRead + AsyncWrite + 'static,
     {
-        let (dialog_tx, dialog_rx) = dialog_io.framed(Codec).split();
-        let (internal_tx, internal_rx) = mpsc::channel::<Frame>(1);
+        let (dialog_sink, dialog_stream) = dialog_io.framed(Codec).split();
 
         let caller_resp_map: Rc<RefCell<HashMap<u64, oneshot::Sender<_>>>> =
             Rc::new(RefCell::new(HashMap::new()));
 
-        // Receive requests and oneshot from dialog caller
-        let caller_ch_fut = {
+        let caller_ch_stream = {
             let caller_resp_map = Rc::clone(&caller_resp_map);
-            let internal_tx = internal_tx.clone();
-
             caller_ch
-                .for_each(move |data| {
-                    let internal_tx = internal_tx.clone();
+                .map(move |data| {
                     let (id, oneshot, message) = data;
                     caller_resp_map.borrow_mut().insert(id, oneshot);
-                    let req = Frame::new(TypeLabel::Request, id, message);
-                    internal_tx.send(req).map(|_| ()).map_err(|_| ())
+                    Frame::new(TypeLabel::Request, id, message)
                 })
-                .map(|_| ())
-                .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "receiver channel broken"))
+                .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "caller channel broken"))
         };
 
-        // Receive requests and responses
-        let dialog_rx_fut = dialog_rx.for_each(move |message| {
-            let internal_tx = internal_tx.clone();
-            Handler::receiver(message, internal_tx, &caller_resp_map, &mut f)
-        });
+        let dialog_stream = dialog_stream
+            .and_then(move |message| Handler::receiver(message, &caller_resp_map, &mut f))
+            .filter_map(|x| x);
 
-        // Actual sending of data from internal channel
-        let dialog_tx_fut =
-            dialog_tx.send_all(internal_rx.map_err(|_| {
-                io::Error::new(io::ErrorKind::Other, "unexpected sender channel error")
-            }));
+        let fut = dialog_sink
+            .send_all(caller_ch_stream.select(dialog_stream))
+            .map(|_| ());
 
-        // TODO: use Either::split for errors
-        let future = dialog_tx_fut
-            .map(|_| ())
-            .select(dialog_rx_fut)
-            .map(|_| ())
-            .map_err(|(a, _)| a)
-            .select(caller_ch_fut)
-            .map(|_| ())
-            .map_err(|(a, _)| a);
-        Handler {
-            f: Box::new(future),
-        }
+        Handler { f: Box::new(fut) }
     }
 
     fn receiver<F>(
         message: Frame,
-        sender: mpsc::Sender<Frame>,
         sender_map: &Rc<RefCell<HashMap<u64, oneshot::Sender<Bytes>>>>,
         f: &mut F,
-    ) -> Box<Future<Item = (), Error = io::Error>>
+    ) -> Box<Future<Item = Option<Frame>, Error = io::Error>>
     where
         F: FnMut(Bytes) -> Box<Future<Item = Bytes, Error = io::Error>>,
     {
         let (t, id, payload) = message.into();
         match t {
             TypeLabel::Request => {
-                let send_fut = f(payload)
-                    .and_then(move |resp| {
-                        let resp = Frame::new(TypeLabel::Response, id, resp);
-                        sender.send(resp).map_err(|_| {
-                            io::Error::new(io::ErrorKind::BrokenPipe, "sender channel broken")
-                        })
-                    })
-                    .map(|_| ());
+                let send_fut =
+                    f(payload).map(move |resp| Some(Frame::new(TypeLabel::Response, id, resp)));
                 Box::new(send_fut)
             }
             TypeLabel::Response => {
                 if let Some(mut c) = sender_map.borrow_mut().remove(&id) {
                     let _ = c.send(payload);
                 }
-                Box::new(ok(()))
+                Box::new(ok(None))
             }
             TypeLabel::Ping => {
                 let pong = Frame::new(TypeLabel::Pong, id, payload);
-                let send_fut = sender
-                    .send(pong)
-                    .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "sender channel broken"))
-                    .map(|_| ());
-                Box::new(send_fut)
+                Box::new(ok(Some(pong)))
             }
-            _ => Box::new(ok(())),
+            _ => Box::new(ok(None)),
         }
     }
 }
