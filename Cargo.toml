@@ -7,3 +7,8 @@ authors = ["arjun <arj1singh@gmail.com>"]
 bytes = "0.4"
 futures = "0.1"
 tokio-io = "0.1"
+
+[dev-dependencies]
+tokio-core = "0.1"
+tokio-uds = "0.1"
+tokio-timer = "0.1"

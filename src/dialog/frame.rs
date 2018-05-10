@@ -1,4 +1,4 @@
-use bytes::BytesMut;
+use bytes::Bytes;
 
 #[derive(Clone, Copy, Debug)]
 pub enum TypeLabel {
@@ -34,27 +34,16 @@ impl From<u8> for TypeLabel {
 pub struct Frame {
     t: TypeLabel,
     id: u64,
-    payload: BytesMut,
+    payload: Bytes,
 }
 
 impl Frame {
-    pub fn new(t: TypeLabel, id: u64, payload: BytesMut) -> Frame {
+    pub fn new(t: TypeLabel, id: u64, payload: Bytes) -> Frame {
         Frame { t, id, payload }
     }
 
-    pub fn frame_type(&self) -> TypeLabel {
-        self.t
-    }
-
-    pub fn id(&self) -> u64{
-        self.id
-    }
-
-    pub fn message_len(&self) -> usize {
-        self.payload.len()
-    }
-
-    pub fn into_message(self) -> BytesMut {
-        self.payload
+    pub fn into(self) -> (TypeLabel, u64, Bytes) {
+        let Frame { t, id, payload } = self;
+        (t, id, payload)
     }
 }
