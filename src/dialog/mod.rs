@@ -115,7 +115,6 @@ mod test {
         handle.spawn(fut_echo.map_err(|_| ()));
         let buf = Bytes::from(&[1][..]);
         let f1 = caller_del
-            .clone()
             .call(buf)
             .and_then(|(resp, _)| {
                 let expected = Bytes::from(&[1, 2][..]);
@@ -127,7 +126,7 @@ mod test {
                 e
             });
         let buf = Bytes::from(&[2][..]);
-        let f2 = caller_del.clone().call(buf).and_then(|(resp, _)| {
+        let f2 = caller_del.call(buf).and_then(|(resp, _)| {
             let expected = Bytes::from(&[2, 1][..]);
             assert_eq!(resp, expected);
             ok(())

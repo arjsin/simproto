@@ -7,7 +7,6 @@ use std::rc::Rc;
 
 #[derive(Clone, Debug)]
 pub struct Caller {
-    // Caller
     handler_ch: mpsc::Sender<(u64, oneshot::Sender<Bytes>, Bytes)>,
     next_id: Rc<Cell<u64>>,
 }
@@ -21,11 +20,12 @@ impl Caller {
     }
 
     #[allow(dead_code)]
-    pub fn call(self, request: Bytes) -> Box<Future<Item = (Bytes, Caller), Error = io::Error>> {
+    pub fn call(&self, request: Bytes) -> Box<Future<Item = (Bytes, Caller), Error = io::Error>> {
         let (tx, rx) = oneshot::channel::<Bytes>();
         let next_id = self.next_id.take();
         let sender = self.clone();
-        let handler_ch_fut = self.handler_ch.send((next_id, tx, request));
+        let handler_ch = self.handler_ch.clone();
+        let handler_ch_fut = handler_ch.send((next_id, tx, request));
         self.next_id.set(next_id.wrapping_add(1));
         // TODO: send and then receive
         Box::new(
