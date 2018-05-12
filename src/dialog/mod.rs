@@ -74,13 +74,13 @@ mod test {
     }
 
     #[test]
-    fn reader_close() {
+    fn caller_close() {
         use std::io::Cursor;
-        let mut core = Core::new().unwrap();
         let data: Vec<u8> = vec![];
         let buf = Cursor::new(data);
-        let (_, fut) = buf.dialog(|req| Box::new(ok(req)));
-        core.run(fut).unwrap();
+        let (caller, fut) = buf.dialog(|req| Box::new(ok(req)));
+        drop(caller);
+        fut.wait().unwrap();
     }
 
     #[test]
