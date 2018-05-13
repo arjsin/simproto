@@ -3,8 +3,8 @@ mod codec;
 mod frame;
 mod handler;
 
-use self::caller::Caller;
-use self::handler::Handler;
+pub use self::caller::Caller;
+pub use self::handler::Handler;
 use bytes::Bytes;
 use futures::unsync::mpsc;
 use futures::Future;
