@@ -1,15 +1,9 @@
 [package]
-name = "simproto"
+name = "framed"
 version = "0.1.0"
 authors = ["arjun <arj1singh@gmail.com>"]
 
-[workspace]
-members = [
-  "framed",
-]
-
 [dependencies]
-framed = { version = "0.1", path = "framed" }
-
 bytes = "0.4.7"
 futures = "0.2.1"
+log = "0.4"

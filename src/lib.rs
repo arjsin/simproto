@@ -1,11 +1,6 @@
 extern crate bytes;
+extern crate framed;
 extern crate futures;
-#[cfg(test)]
-extern crate tokio_core;
-extern crate tokio_io;
-#[cfg(test)]
-extern crate tokio_timer;
-#[cfg(test)]
-extern crate tokio_uds;
 
-mod dialog;
+pub mod dialog;
+pub mod util;

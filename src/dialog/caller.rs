@@ -1,9 +1,10 @@
-use bytes::Bytes;
-use futures::unsync::{mpsc, oneshot};
-use futures::{Future, Sink};
 use std::cell::Cell;
 use std::io;
 use std::rc::Rc;
+
+use bytes::Bytes;
+use futures::channel::{mpsc, oneshot};
+use futures::prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct Caller {
@@ -19,7 +20,6 @@ impl Caller {
         }
     }
 
-    #[allow(dead_code)]
     pub fn call(&self, request: Bytes) -> Box<Future<Item = (Bytes, Caller), Error = io::Error>> {
         let (tx, rx) = oneshot::channel::<Bytes>();
         let next_id = self.next_id.take();

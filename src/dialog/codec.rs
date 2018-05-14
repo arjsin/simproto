@@ -1,7 +1,7 @@
 use super::frame::{Frame, TypeLabel};
 use bytes::{BufMut, ByteOrder, BytesMut, LittleEndian};
+use framed::codec::{Decoder, Encoder};
 use std::{io, mem};
-use tokio_io::codec::{Decoder, Encoder};
 
 pub struct Codec;
 

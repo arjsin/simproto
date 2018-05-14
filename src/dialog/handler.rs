@@ -1,14 +1,17 @@
-use super::codec::Codec;
-use super::frame::{Frame, TypeLabel};
-use bytes::Bytes;
-use futures::future::ok;
-use futures::unsync::{mpsc, oneshot};
-use futures::{Future, Poll, Sink, Stream};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
 use std::rc::Rc;
-use tokio_io::{AsyncRead, AsyncWrite};
+
+use super::Codec;
+use super::{Frame, TypeLabel};
+
+use bytes::Bytes;
+use framed::framed::framed;
+use futures::channel::{mpsc, oneshot};
+use futures::future::ok;
+use futures::io::{AsyncRead, AsyncWrite};
+use futures::prelude::*;
 
 pub struct Handler {
     f: Box<Future<Item = (), Error = io::Error>>,
@@ -24,7 +27,7 @@ impl Handler {
         F: FnMut(Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static,
         A: AsyncRead + AsyncWrite + 'static,
     {
-        let (dialog_sink, dialog_stream) = dialog_io.framed(Codec).split();
+        let (dialog_sink, dialog_stream) = framed(dialog_io, Codec).split();
 
         let caller_resp_map: Rc<RefCell<HashMap<u64, oneshot::Sender<_>>>> =
             Rc::new(RefCell::new(HashMap::new()));
@@ -42,7 +45,7 @@ impl Handler {
 
         let dialog_stream = dialog_stream
             .and_then(move |message| Handler::receiver(message, &caller_resp_map, &mut f))
-            .filter_map(|x| x);
+            .filter_map(|x| Ok(x));
 
         let fut = dialog_sink
             .send_all(caller_ch_stream.select(dialog_stream))
@@ -84,7 +87,7 @@ impl Handler {
 impl Future for Handler {
     type Item = ();
     type Error = io::Error;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.f.poll()
+    fn poll(&mut self, cx: &mut task::Context) -> Poll<Self::Item, Self::Error> {
+        self.f.poll(cx)
     }
 }
