@@ -23,17 +23,15 @@ impl Caller {
     pub fn call(&self, request: Bytes) -> Box<Future<Item = (Bytes, Caller), Error = io::Error>> {
         let (tx, rx) = oneshot::channel::<Bytes>();
         let next_id = self.next_id.take();
-        let sender = self.clone();
         let handler_ch = self.handler_ch.clone();
         let handler_ch_fut = handler_ch.send((next_id, tx, request));
         self.next_id.set(next_id.wrapping_add(1));
-        // TODO: send and then receive
+        let next_id = Rc::clone(&self.next_id);
         Box::new(
-            rx.map_err(|_| io::Error::new(io::ErrorKind::Other, "oneshot tx dropped"))
-                .join(
-                    handler_ch_fut.map_err(|_| io::Error::new(io::ErrorKind::Other, "send failed")),
-                )
-                .map(|(rx, _)| (rx, sender)),
+            handler_ch_fut.map_err(|_| io::Error::new(io::ErrorKind::Other, "send failed"))
+            .and_then(|handler_ch| rx.map(|resp|(resp, handler_ch)).map_err(|_| panic!("oneshot tx dropped"))
+                .map(|(resp, handler_ch)| (resp, Caller{handler_ch, next_id})),
+            )
         )
     }
 }
