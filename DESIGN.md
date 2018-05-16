@@ -38,7 +38,7 @@ Type of communication over the protocol:
 3. Notify
 4. RPC
 
-### Request packet:
+### Request message:
 
 `T`|`len`|`topic`|`data`
 :-:|:---:|:-----:|:----------------:
@@ -59,7 +59,7 @@ data - The body of the request. It can be any serializable format which the appl
 
 SIZE - The size of the whole message. Lower layer frames the whole message so this is not added to the message.
 
-### Response packet:
+### Response message:
 `T`|`data`
 :-:|:----------------:
  1 |`SIZE` - 1
