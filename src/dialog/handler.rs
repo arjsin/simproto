@@ -4,6 +4,7 @@ use std::io;
 use std::rc::Rc;
 
 use super::Codec;
+use super::Caller;
 use super::{Frame, TypeLabel};
 
 use bytes::Bytes;
@@ -21,10 +22,11 @@ impl Handler {
     pub fn new<F, A>(
         dialog_io: A,
         caller_ch: mpsc::Receiver<(u64, oneshot::Sender<Bytes>, Bytes)>,
+        caller: Caller,
         mut f: F,
     ) -> Handler
     where
-        F: FnMut(Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static,
+        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static,
         A: AsyncRead + AsyncWrite + 'static,
     {
         let (dialog_sink, dialog_stream) = framed(dialog_io, Codec).split();
@@ -44,7 +46,7 @@ impl Handler {
         };
 
         let dialog_stream = dialog_stream
-            .and_then(move |message| Handler::receiver(message, &caller_resp_map, &mut f))
+            .and_then(move |message| Handler::receiver(message, &caller_resp_map, caller.clone(), &mut f))
             .filter_map(|x| Ok(x));
 
         let fut = dialog_sink
@@ -57,16 +59,17 @@ impl Handler {
     fn receiver<F>(
         message: Frame,
         sender_map: &Rc<RefCell<HashMap<u64, oneshot::Sender<Bytes>>>>,
+        caller: Caller,
         f: &mut F,
     ) -> Box<Future<Item = Option<Frame>, Error = io::Error>>
     where
-        F: FnMut(Bytes) -> Box<Future<Item = Bytes, Error = io::Error>>,
+        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error>>,
     {
         let (t, id, payload) = message.into();
         match t {
             TypeLabel::Request => {
                 let send_fut =
-                    f(payload).map(move |resp| Some(Frame::new(TypeLabel::Response, id, resp)));
+                    f(caller, payload).map(move |resp| Some(Frame::new(TypeLabel::Response, id, resp)));
                 Box::new(send_fut)
             }
             TypeLabel::Response => {

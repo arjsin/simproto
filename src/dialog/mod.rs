@@ -15,10 +15,10 @@ use futures::channel::mpsc;
 use futures::io::{AsyncRead, AsyncWrite};
 use futures::prelude::*;
 
-trait Dialog {
+pub trait Dialog {
     fn dialog<F>(self, f: F) -> (Caller, Handler)
     where
-        F: FnMut(Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static;
+        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static;
 }
 
 impl<A> Dialog for A
@@ -27,10 +27,11 @@ where
 {
     fn dialog<F>(self, f: F) -> (Caller, Handler)
     where
-        F: FnMut(Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static,
+        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static,
     {
         let (tx, rx) = mpsc::channel(1);
-        (Caller::new(tx), Handler::new(self, rx, f))
+        let caller = Caller::new(tx);
+        (caller.clone(), Handler::new(self, rx, caller, f))
     }
 }
 
@@ -38,7 +39,7 @@ where
 mod test {
     use super::*;
     use bytes::Bytes;
-    use futures::executor::{block_on, LocalPool};
+    use futures::executor::LocalPool;
     use futures::future::ok;
     use std::cell::Cell;
     use std::rc::Rc;
@@ -48,8 +49,8 @@ mod test {
     fn simple_call() {
         let assert_count = Rc::new(Cell::new(0));
         let (s1, s2) = PairIO::new();
-        let (caller_echo, fut_echo) = s1.dialog(|req| Box::new(ok(req)));
-        let (caller_del, fut_del) = s2.dialog(|_| Box::new(ok(Bytes::new())));
+        let (caller_echo, fut_echo) = s1.dialog(|_, req| Box::new(ok(req)));
+        let (caller_del, fut_del) = s2.dialog(|_, _| Box::new(ok(Bytes::new())));
         let mut pool = LocalPool::new();
         let mut executor = pool.executor();
         executor
@@ -62,7 +63,7 @@ mod test {
         let buf = Bytes::from(&b"asdf"[..]);
         let f1 = {
             let mut assert_count = assert_count.clone();
-            caller_echo.call(buf.clone()).and_then(move |(resp, _)| {
+            caller_echo.call(buf.clone()).and_then(move |(_, resp)| {
                 assert_eq!(resp, Bytes::new());
                 assert_count.set(assert_count.get() + 1);
                 ok(())
@@ -70,7 +71,7 @@ mod test {
         };
         let f2 = {
             let mut assert_count = assert_count.clone();
-            caller_del.call(buf.clone()).and_then(move |(resp, _)| {
+            caller_del.call(buf.clone()).and_then(move |(_, resp)| {
                 assert_eq!(resp, buf);
                 assert_count.set(assert_count.get() + 1);
                 ok(())
@@ -79,15 +80,4 @@ mod test {
         let _ = pool.run_until(f1.join(f2), &mut executor).unwrap();
         assert_eq!(assert_count.get(), 2);
     }
-
-    #[test]
-    fn caller_close() {
-        use std::io::Cursor;
-        let data: Vec<u8> = vec![];
-        let buf = Cursor::new(data);
-        let (caller, fut) = buf.dialog(|req| Box::new(ok(req)));
-        drop(caller);
-        block_on(fut).unwrap();
-    }
-
 }

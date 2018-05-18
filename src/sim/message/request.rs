@@ -9,9 +9,9 @@ pub enum RequestType {
 }
 
 pub struct Request {
-    kind: RequestType,
-    topic: Bytes,
-    message: Bytes,
+    pub kind: RequestType,
+    pub topic: Bytes,
+    pub message: Bytes,
 }
 
 impl RequestType {
@@ -38,7 +38,7 @@ impl From<RequestType> for u8 {
 }
 
 impl Request {
-    fn new(k: RequestType, topic: Bytes, message: Bytes) -> Request {
+    pub fn new(k: RequestType, topic: Bytes, message: Bytes) -> Request {
         debug_assert!(topic.len() <= (u16::max_value() as usize));
         Request {
             kind: k,
@@ -47,7 +47,7 @@ impl Request {
         }
     }
 
-    fn from_bytes(mut b: Bytes) -> Option<Request> {
+    pub fn from_bytes(mut b: Bytes) -> Option<Request> {
         let kind: RequestType = RequestType::from(b.split_to(1)[0])?;
         let topic_len = LittleEndian::read_u16(&b.split_to(2));
         if (topic_len as usize) < b.len() {
@@ -62,7 +62,7 @@ impl Request {
         })
     }
 
-    fn write(&self, mut b: BytesMut) {
+    pub fn write(&self, b: &mut BytesMut) {
         b.reserve(3 + self.topic.len() + self.message.len());
         b.put_u8(self.kind.into());
         b.put_u16_le(self.topic.len() as u16);

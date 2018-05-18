@@ -31,6 +31,7 @@ pub enum Response {
     Rejected(Bytes),
     NotSubscribed,
     Notified,
+    InvalidRequest,
 }
 
 enum ResponseType {
@@ -40,6 +41,7 @@ enum ResponseType {
     Rejected,
     NotSubscribed,
     Notified,
+    InvalidRequest,
 }
 
 impl From<RpcResponse> for Response {
@@ -112,10 +114,11 @@ impl Response {
             }
             ResponseType::NotSubscribed => Some(Response::NotSubscribed),
             ResponseType::Notified => Some(Response::Notified),
+            ResponseType::InvalidRequest => Some(Response::InvalidRequest),
         }
     }
 
-    fn write(&self, mut b: BytesMut) {
+    pub fn write(&self, b: &mut BytesMut) {
         match self {
             Response::Accepted(x) => {
                 b.put_u8(0);
@@ -129,6 +132,7 @@ impl Response {
             },
             Response::NotSubscribed => b.put_u8(4),
             Response::Notified => b.put_u8(5),
+            Response::InvalidRequest => b.put_u8(6),
         }
     }
 }
