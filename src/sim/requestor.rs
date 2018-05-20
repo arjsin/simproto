@@ -1,4 +1,4 @@
-use super::message::{Request, RequestType};
+use super::message::{Request, RequestType, Response, RpcResponse};
 use bytes::{Bytes, BytesMut};
 use dialog::Caller;
 use futures::prelude::*;
@@ -18,11 +18,14 @@ impl Requestor {
         &mut self,
         topic: Bytes,
         data: Bytes,
-    ) -> impl Future<Item = (Requestor, Bytes), Error = io::Error> {
+    ) -> impl Future<Item = (Requestor, RpcResponse), Error = io::Error> {
         let mut request = BytesMut::new();
         Request::new(RequestType::Rpc, topic, data).write(&mut request);
         self.caller
             .call(request.freeze())
-            .map(|(caller, response)| (Self::new(caller), response))
+            .map(|(caller, response)| {
+                let response = Response::from_bytes(response);
+                (Self::new(caller), response.into())
+            })
     }
 }

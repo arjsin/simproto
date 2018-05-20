@@ -66,7 +66,7 @@ impl Request {
         b.reserve(3 + self.topic.len() + self.message.len());
         b.put_u8(self.kind.into());
         b.put_u16_le(self.topic.len() as u16);
-        b.extend_from_slice(&self.topic);
-        b.extend_from_slice(&self.message);
+        b.put(&self.topic);
+        b.put(&self.message);
     }
 }

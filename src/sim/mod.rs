@@ -105,7 +105,7 @@ mod test {
 
         let (io1, io2) = PairIO::new();
         let (mut req1, fut1) = sim.add(io1);
-        let (mut req2, fut2) = sim.add(io2);
+        let (_req2, fut2) = sim.add(io2);
 
         let mut pool = LocalPool::new();
         let mut executor = pool.executor();
@@ -117,9 +117,9 @@ mod test {
             .unwrap();
 
         let hello = BytesMut::from(r"hello").freeze();
-        let f = req2
+        let f = req1
             .rpc(topic_echo, hello.clone())
-            .inspect(|(r, resp)| assert_eq!(resp, &hello));
+            .inspect(|(_, resp)| assert_eq!(resp, &RpcResponse::Accepted(hello)));
         let _ = pool.run_until(f, &mut executor).unwrap();
     }
 }
