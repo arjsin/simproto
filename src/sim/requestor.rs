@@ -14,7 +14,7 @@ impl Requestor {
         Requestor { caller }
     }
 
-    fn call(
+    pub fn rpc(
         &mut self,
         topic: Bytes,
         data: Bytes,

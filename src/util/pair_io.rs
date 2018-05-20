@@ -14,6 +14,7 @@ pub struct OneEndIO {
     out_io: InMemIO,
     out_ch: Sender<()>,
     in_pos: u64,
+    flush: bool,
 }
 
 impl OneEndIO {
@@ -24,6 +25,7 @@ impl OneEndIO {
             out_io,
             out_ch,
             in_pos: 0,
+            flush: false,
         }
     }
 
@@ -67,16 +69,25 @@ impl AsyncRead for OneEndIO {
 impl AsyncWrite for OneEndIO {
     fn poll_write(&mut self, _: &mut task::Context, buf: &[u8]) -> Result<Async<usize>, io::Error> {
         match io::Write::write(&mut *self.out_io.borrow_mut(), buf) {
-            Ok(x) => Ok(Async::Ready(x)),
+            Ok(x) => {
+                self.flush = true;
+                Ok(Async::Ready(x))
+            }
             Err(e) => Err(e),
         }
     }
 
     fn poll_flush(&mut self, cx: &mut task::Context) -> Poll<(), io::Error> {
-        // TODO: store states
+        if !self.flush {
+            return Ok(Async::Ready(()));
+        }
+        // TODO: store states and fix flush boolean
         match self.out_ch.start_send(()) {
             Ok(()) => match self.out_ch.poll_flush(cx) {
-                Ok(Async::Ready(())) => Ok(Async::Ready(())),
+                Ok(Async::Ready(())) => {
+                    self.flush = false;
+                    Ok(Async::Ready(()))
+                }
                 Ok(Async::Pending) => Ok(Async::Pending),
                 Err(_) => Err(io::Error::new(
                     io::ErrorKind::BrokenPipe,
@@ -119,7 +130,8 @@ fn write_read() {
     use futures::prelude::*;
 
     let (s1, s2) = PairIO::new();
-    let fut1 = s1.write_all(&[0u8, 1])
+    let fut1 = s1
+        .write_all(&[0u8, 1])
         .and_then(|(s1, _)| s1.flush())
         .and_then(|s1| s1.write_all(&[3]))
         .and_then(|(s1, _)| s1.flush())

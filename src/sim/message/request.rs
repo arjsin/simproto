@@ -1,6 +1,6 @@
 use bytes::{BufMut, ByteOrder, Bytes, BytesMut, LittleEndian};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum RequestType {
     Rpc,
     Subscription,
@@ -50,7 +50,7 @@ impl Request {
     pub fn from_bytes(mut b: Bytes) -> Option<Request> {
         let kind: RequestType = RequestType::from(b.split_to(1)[0])?;
         let topic_len = LittleEndian::read_u16(&b.split_to(2));
-        if (topic_len as usize) < b.len() {
+        if (topic_len as usize) > b.len() {
             return None;
         }
         let topic = b.split_to(topic_len as usize);

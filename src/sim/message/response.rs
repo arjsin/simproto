@@ -93,6 +93,7 @@ impl ResponseType {
             3 => Some(ResponseType::Rejected),
             4 => Some(ResponseType::NotSubscribed),
             5 => Some(ResponseType::Notified),
+            6 => Some(ResponseType::InvalidRequest),
             _ => None,
         }
     }

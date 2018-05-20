@@ -12,7 +12,7 @@ pub struct Handler {
 }
 
 impl Handler {
-    fn new() -> Handler {
+    pub fn new() -> Handler {
         Handler {
             call_handler: HashMap::new(),
             sub_handler: HashMap::new(),

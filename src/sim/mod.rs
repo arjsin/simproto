@@ -84,3 +84,42 @@ impl Sim {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use futures::executor::LocalPool;
+    use util::PairIO;
+
+    #[test]
+    fn simple_rpc() {
+        let mut handler = Handler::new();
+        let topic_echo = BytesMut::from(r"echo").freeze();
+        let topic_del = BytesMut::from(r"del").freeze();
+        handler.on_rpc(topic_echo.clone(), Box::new(|_, req| Box::new(ok(req))));
+        handler.on_rpc(
+            topic_del,
+            Box::new(|_, _| Box::new(ok(BytesMut::from(r"").freeze()))),
+        );
+        let sim = Sim::new(handler);
+
+        let (io1, io2) = PairIO::new();
+        let (mut req1, fut1) = sim.add(io1);
+        let (mut req2, fut2) = sim.add(io2);
+
+        let mut pool = LocalPool::new();
+        let mut executor = pool.executor();
+        executor
+            .spawn_local(fut1.map_err(|_| panic!("fut1 panic")))
+            .unwrap();
+        executor
+            .spawn_local(fut2.map_err(|_| panic!("fut2 panic")))
+            .unwrap();
+
+        let hello = BytesMut::from(r"hello").freeze();
+        let f = req2
+            .rpc(topic_echo, hello.clone())
+            .inspect(|(r, resp)| assert_eq!(resp, &hello));
+        let _ = pool.run_until(f, &mut executor).unwrap();
+    }
+}

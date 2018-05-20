@@ -63,12 +63,13 @@ mod test {
         let buf = Bytes::from(&b"asdf"[..]);
         let f1 = {
             let mut assert_count = assert_count.clone();
-            caller_echo.call(buf.clone()).and_then(move |(_, resp)| {
+            caller_echo.call(buf).and_then(move |(_, resp)| {
                 assert_eq!(resp, Bytes::new());
                 assert_count.set(assert_count.get() + 1);
                 ok(())
             })
         };
+        let buf = Bytes::from(&b"123"[..]);
         let f2 = {
             let mut assert_count = assert_count.clone();
             caller_del.call(buf.clone()).and_then(move |(_, resp)| {
