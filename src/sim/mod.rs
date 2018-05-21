@@ -98,8 +98,8 @@ mod test {
         let topic_del = BytesMut::from(r"del").freeze();
         handler.on_rpc(topic_echo.clone(), Box::new(|_, req| Box::new(ok(req))));
         handler.on_rpc(
-            topic_del,
-            Box::new(|_, _| Box::new(ok(BytesMut::from(r"").freeze()))),
+            topic_del.clone(),
+            Box::new(|_, _| Box::new(ok(BytesMut::from(&[] as &[u8]).freeze()))),
         );
         let sim = Sim::new(handler);
 
@@ -110,16 +110,22 @@ mod test {
         let mut pool = LocalPool::new();
         let mut executor = pool.executor();
         executor
-            .spawn_local(fut1.map_err(|_| panic!("fut1 panic")))
+            .spawn_local(fut1.map_err(|e| panic!("fut1 panic {:?}", e)))
             .unwrap();
         executor
-            .spawn_local(fut2.map_err(|_| panic!("fut2 panic")))
+            .spawn_local(fut2.map_err(|e| panic!("fut2 panic {:?}", e)))
             .unwrap();
 
         let hello = BytesMut::from(r"hello").freeze();
-        let f = req1
+        let f1 = req1.rpc(topic_del, hello.clone()).inspect(|(_, resp)| {
+            assert_eq!(resp, &RpcResponse::Accepted(BytesMut::from(&[] as &[u8]).freeze()))
+        });
+        let f2 = req1
+            .rpc(BytesMut::from(r"new").freeze(), hello.clone())
+            .inspect(|(_, resp)| assert_eq!(resp, &RpcResponse::TopicNotFound));
+        let f3 = req1
             .rpc(topic_echo, hello.clone())
-            .inspect(|(_, resp)| assert_eq!(resp, &RpcResponse::Accepted(hello)));
-        let _ = pool.run_until(f, &mut executor).unwrap();
+            .inspect(|(_, resp)| assert_eq!(resp, &RpcResponse::Accepted(hello.clone())));
+        let _ = pool.run_until(f1.join(f2).join(f3), &mut executor).unwrap();
     }
 }

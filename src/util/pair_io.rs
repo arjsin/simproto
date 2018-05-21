@@ -68,13 +68,13 @@ impl AsyncRead for OneEndIO {
 
 impl AsyncWrite for OneEndIO {
     fn poll_write(&mut self, _: &mut task::Context, buf: &[u8]) -> Result<Async<usize>, io::Error> {
-        match io::Write::write(&mut *self.out_io.borrow_mut(), buf) {
-            Ok(x) => {
-                self.flush = true;
-                Ok(Async::Ready(x))
+            match io::Write::write(&mut *self.out_io.borrow_mut(), buf) {
+                Ok(x) => {
+                    self.flush = true;
+                    Ok(Async::Ready(x))
+                }
+                Err(e) => Err(e),
             }
-            Err(e) => Err(e),
-        }
     }
 
     fn poll_flush(&mut self, cx: &mut task::Context) -> Poll<(), io::Error> {
@@ -89,15 +89,23 @@ impl AsyncWrite for OneEndIO {
                     Ok(Async::Ready(()))
                 }
                 Ok(Async::Pending) => Ok(Async::Pending),
-                Err(_) => Err(io::Error::new(
+                Err(e) => if e.is_full() {
+                    Ok(Async::Ready(()))
+                } else {
+                    Err(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "unable to notify flush",
+                    ))
+                },
+            },
+            Err(e) => if e.is_full() {
+                Ok(Async::Ready(()))
+            } else {
+                Err(io::Error::new(
                     io::ErrorKind::BrokenPipe,
                     "unable to notify flush",
-                )),
+                ))
             },
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "unable to notify flush",
-            )),
         }
     }
 
@@ -115,8 +123,8 @@ impl PairIO {
     pub fn new() -> (OneEndIO, OneEndIO) {
         let io1 = Rc::new(RefCell::new(Cursor::new(Vec::new())));
         let io2 = Rc::new(RefCell::new(Cursor::new(Vec::new())));
-        let (out_ch1, in_ch1) = channel(1);
-        let (out_ch2, in_ch2) = channel(1);
+        let (out_ch1, in_ch1) = channel(0);
+        let (out_ch2, in_ch2) = channel(0);
         (
             OneEndIO::new(io1.clone(), io2.clone(), in_ch1, out_ch2),
             OneEndIO::new(io2, io1, in_ch2, out_ch1),
@@ -124,19 +132,42 @@ impl PairIO {
     }
 }
 
-#[test]
-fn write_read() {
+#[cfg(test)]
+mod test {
+    use super::*;
     use futures::executor::block_on;
-    use futures::prelude::*;
 
-    let (s1, s2) = PairIO::new();
-    let fut1 = s1
-        .write_all(&[0u8, 1])
-        .and_then(|(s1, _)| s1.flush())
-        .and_then(|s1| s1.write_all(&[3]))
-        .and_then(|(s1, _)| s1.flush())
-        .and_then(|s1| s1.close());
-    let buf = vec![];
-    let buf = block_on(s2.read_to_end(buf).join(fut1).map(|((_, buf), _)| buf)).unwrap();
-    assert_eq!(buf, [0u8, 1, 3]);
+    #[test]
+    fn write_read() {
+        let (s1, s2) = PairIO::new();
+        let fut1 = s1
+            .write_all(&[0u8, 1])
+            .and_then(|(s1, _)| s1.flush())
+            .and_then(|s1| s1.write_all(&[3]))
+            .and_then(|(s1, _)| s1.flush())
+            .and_then(|s1| s1.close());
+        let buf = vec![];
+        let buf = block_on(s2.read_to_end(buf).join(fut1).map(|((_, buf), _)| buf)).unwrap();
+        assert_eq!(buf, [0u8, 1, 3]);
+    }
+
+    #[test]
+    fn fill_buffer() {
+        let (s1, s2) = PairIO::new();
+        let fut1 = s1
+            .write_all(&[0])
+            .and_then(|(s, _)| s.flush())
+            .and_then(|s| s.write_all(&[1]))
+            .and_then(|(s, _)| s.flush())
+            .and_then(|s| s.write_all(&[2]))
+            .and_then(|(s, _)| s.flush())
+            .and_then(|s| s.write_all(&[3]))
+            .and_then(|(s, _)| s.flush())
+            .and_then(|s| s.write_all(&[4]))
+            .and_then(|(s, _)| s.flush())
+            .and_then(|s| s.close());
+        let buf = vec![];
+        let buf = block_on(s2.read_to_end(buf).join(fut1).map(|((_, buf), _)| buf)).unwrap();
+        assert_eq!(buf, [0u8, 1, 2, 3, 4]);
+    }
 }
