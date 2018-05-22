@@ -2,11 +2,10 @@ extern crate futures;
 
 use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::prelude::*;
-use std::cell::RefCell;
 use std::io::{self, Cursor};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-type InMemIO = Rc<RefCell<Cursor<Vec<u8>>>>;
+type InMemIO = Arc<Mutex<Cursor<Vec<u8>>>>;
 
 pub struct OneEndIO {
     in_io: InMemIO,
@@ -30,16 +29,17 @@ impl OneEndIO {
     }
 
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let old_pos = (*self.in_io).borrow().position();
-        (*self.in_io).borrow_mut().set_position(self.in_pos);
-        let read = io::Read::read(&mut *self.in_io.borrow_mut(), buf);
-        self.in_pos = (*self.in_io).borrow().position();
+        let mut in_io = self.in_io.lock().unwrap();
+        let old_pos = in_io.position();
+        in_io.set_position(self.in_pos);
+        let read = io::Read::read(&mut *in_io, buf);
+        self.in_pos = in_io.position();
         if self.in_pos == old_pos {
-            (*self.in_io).borrow_mut().set_position(0);
-            (*self.in_io).borrow_mut().get_mut().clear();
+            in_io.set_position(0);
+            in_io.get_mut().clear();
             self.in_pos = 0;
         } else {
-            (*self.in_io).borrow_mut().set_position(old_pos);
+            in_io.set_position(old_pos);
         }
         read
     }
@@ -68,7 +68,7 @@ impl AsyncRead for OneEndIO {
 
 impl AsyncWrite for OneEndIO {
     fn poll_write(&mut self, _: &mut task::Context, buf: &[u8]) -> Result<Async<usize>, io::Error> {
-            match io::Write::write(&mut *self.out_io.borrow_mut(), buf) {
+            match io::Write::write(&mut *self.out_io.lock().unwrap(), buf) {
                 Ok(x) => {
                     self.flush = true;
                     Ok(Async::Ready(x))
@@ -121,8 +121,8 @@ pub struct PairIO;
 
 impl PairIO {
     pub fn new() -> (OneEndIO, OneEndIO) {
-        let io1 = Rc::new(RefCell::new(Cursor::new(Vec::new())));
-        let io2 = Rc::new(RefCell::new(Cursor::new(Vec::new())));
+        let io1 = Arc::new(Mutex::new(Cursor::new(Vec::new())));
+        let io2 = Arc::new(Mutex::new(Cursor::new(Vec::new())));
         let (out_ch1, in_ch1) = channel(0);
         let (out_ch2, in_ch2) = channel(0);
         (

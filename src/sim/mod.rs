@@ -12,23 +12,22 @@ use dialog::{Caller, Dialog};
 use futures::future::ok;
 use futures::io::{AsyncRead, AsyncWrite};
 use futures::prelude::*;
-use std::cell::RefCell;
 use std::io;
-use std::rc::Rc;
+use std::sync::Arc;
 
-struct Sim(Rc<RefCell<Handler>>);
+struct Sim(Arc<Handler>);
 
 impl Sim {
     fn new(h: Handler) -> Self {
-        Sim(Rc::new(RefCell::new(h)))
+        Sim(Arc::new(h))
     }
 
     #[allow(dead_code)]
-    fn add<A: AsyncRead + AsyncWrite + 'static>(
+    fn add<A: AsyncRead + AsyncWrite + Send + Sync + 'static>(
         &self,
         io: A,
     ) -> (Requestor, impl Future<Item = (), Error = io::Error>) {
-        let handler = Rc::clone(&self.0);
+        let handler = Arc::clone(&self.0);
         let (caller, handler) = io.dialog(move |caller, request| {
             let fut = match Request::from_bytes(request) {
                 Some(Request {
@@ -36,9 +35,9 @@ impl Sim {
                     topic,
                     message,
                 }) => {
-                    let mut handler = handler.borrow_mut();
-                    Self::rpc_handler(caller, &mut handler, topic, message)
-                        as Box<Future<Item = _, Error = _>>
+                    let handler = &*handler;
+                    Self::rpc_handler(caller, handler, topic, message)
+                        as Box<Future<Item = _, Error = _> + Send + Sync>
                 }
                 Some(Request {
                     kind: RequestType::Subscription,
@@ -69,18 +68,17 @@ impl Sim {
 
     fn rpc_handler(
         caller: Caller,
-        handler: &mut Handler,
+        handler: &Handler,
         topic: Bytes,
         message: Bytes,
-    ) -> Box<Future<Item = Response, Error = io::Error>> {
+    ) -> Box<Future<Item = Response, Error = io::Error> + Send + Sync> {
         match handler.get_rpc(&topic) {
             Some(call_handler) => Box::new(
                 call_handler(Requestor::new(caller), message)
                     .map(|x| RpcResponse::Accepted(x).into()),
-            ) as Box<Future<Item = _, Error = _>>,
-            None => {
-                Box::new(ok(RpcResponse::TopicNotFound.into())) as Box<Future<Item = _, Error = _>>
-            }
+            ) as Box<Future<Item = _, Error = _> + Send + Sync>,
+            None => Box::new(ok(RpcResponse::TopicNotFound.into()))
+                as Box<Future<Item = _, Error = _> + Send + Sync>,
         }
     }
 }
@@ -90,6 +88,19 @@ mod test {
     use super::*;
     use futures::executor::LocalPool;
     use util::PairIO;
+
+    fn is_sync<T: Sync>() {}
+    fn is_send<T: Send>() {}
+
+    #[test]
+    fn test_bounds() {
+        is_send::<Handler>();
+        is_send::<Requestor>();
+        is_sync::<Handler>();
+        is_sync::<Requestor>();
+        is_send::<Sim>();
+        is_sync::<Sim>();
+    }
 
     #[test]
     fn simple_rpc() {
@@ -118,7 +129,10 @@ mod test {
 
         let hello = BytesMut::from(r"hello").freeze();
         let f1 = req1.rpc(topic_del, hello.clone()).inspect(|(_, resp)| {
-            assert_eq!(resp, &RpcResponse::Accepted(BytesMut::from(&[] as &[u8]).freeze()))
+            assert_eq!(
+                resp,
+                &RpcResponse::Accepted(BytesMut::from(&[] as &[u8]).freeze())
+            )
         });
         let f2 = req1
             .rpc(BytesMut::from(r"new").freeze(), hello.clone())

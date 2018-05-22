@@ -1,13 +1,13 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-use super::Codec;
 use super::Caller;
+use super::Codec;
 use super::{Frame, TypeLabel};
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use framed::framed::framed;
 use futures::channel::{mpsc, oneshot};
 use futures::future::ok;
@@ -15,38 +15,41 @@ use futures::io::{AsyncRead, AsyncWrite};
 use futures::prelude::*;
 
 pub struct Handler {
-    f: Box<Future<Item = (), Error = io::Error>>,
+    f: Box<Future<Item = (), Error = io::Error> + Send + Sync>,
 }
 
 impl Handler {
     pub fn new<F, A>(
         dialog_io: A,
-        caller_ch: mpsc::Receiver<(u64, oneshot::Sender<Bytes>, Bytes)>,
+        caller_ch: mpsc::Receiver<(usize, oneshot::Sender<Bytes>, Bytes)>,
         caller: Caller,
         mut f: F,
     ) -> Handler
     where
-        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static,
-        A: AsyncRead + AsyncWrite + 'static,
+        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>,
+        F: Send + Sync + 'static,
+        A: AsyncRead + AsyncWrite + Send + Sync + 'static,
     {
         let (dialog_sink, dialog_stream) = framed(dialog_io, Codec).split();
 
-        let caller_resp_map: Rc<RefCell<HashMap<u64, oneshot::Sender<_>>>> =
-            Rc::new(RefCell::new(HashMap::new()));
+        let caller_resp_map: Arc<Mutex<HashMap<usize, oneshot::Sender<_>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
 
         let caller_ch_stream = {
-            let caller_resp_map = Rc::clone(&caller_resp_map);
+            let caller_resp_map = Arc::clone(&caller_resp_map);
             caller_ch
                 .map(move |data| {
                     let (id, oneshot, message) = data;
-                    caller_resp_map.borrow_mut().insert(id, oneshot);
-                    Frame::new(TypeLabel::Request, id, message)
+                    caller_resp_map.lock().unwrap().insert(id, oneshot);
+                    Frame::new(TypeLabel::Request, id as u64, message)
                 })
                 .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "caller channel broken"))
         };
 
         let dialog_stream = dialog_stream
-            .and_then(move |message| Handler::receiver(message, &caller_resp_map, caller.clone(), &mut f))
+            .and_then(move |message| {
+                Handler::receiver(message, &caller_resp_map, caller.clone(), &mut f)
+            })
             .filter_map(|x| Ok(x));
 
         let fut = dialog_sink
@@ -58,22 +61,22 @@ impl Handler {
 
     fn receiver<F>(
         message: Frame,
-        sender_map: &Rc<RefCell<HashMap<u64, oneshot::Sender<Bytes>>>>,
+        sender_map: &Arc<Mutex<HashMap<usize, oneshot::Sender<Bytes>>>>,
         caller: Caller,
         f: &mut F,
-    ) -> Box<Future<Item = Option<Frame>, Error = io::Error>>
+    ) -> Box<Future<Item = Option<Frame>, Error = io::Error> + Send + Sync>
     where
-        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error>>,
+        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync> + Send,
     {
         let (t, id, payload) = message.into();
         match t {
             TypeLabel::Request => {
-                let send_fut =
-                    f(caller, payload).map(move |resp| Some(Frame::new(TypeLabel::Response, id, resp)));
+                let send_fut = f(caller, payload)
+                    .map(move |resp| Some(Frame::new(TypeLabel::Response, id, resp)));
                 Box::new(send_fut)
             }
             TypeLabel::Response => {
-                if let Some(mut c) = sender_map.borrow_mut().remove(&id) {
+                if let Some(mut c) = sender_map.lock().unwrap().remove(&(id as usize)) {
                     let _ = c.send(payload);
                 }
                 Box::new(ok(None))

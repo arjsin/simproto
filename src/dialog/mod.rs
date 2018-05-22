@@ -18,16 +18,18 @@ use futures::prelude::*;
 pub trait Dialog {
     fn dialog<F>(self, f: F) -> (Caller, Handler)
     where
-        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static;
+        F: Fn(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>,
+        F: Send + Sync + 'static;
 }
 
 impl<A> Dialog for A
 where
-    A: AsyncRead + AsyncWrite + 'static,
+    A: AsyncRead + AsyncWrite + Send + Sync + 'static,
 {
     fn dialog<F>(self, f: F) -> (Caller, Handler)
     where
-        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error>> + 'static,
+        F: Fn(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>,
+        F: Send + Sync + 'static,
     {
         let (tx, rx) = mpsc::channel(1);
         let caller = Caller::new(tx);
@@ -39,11 +41,25 @@ where
 mod test {
     use super::*;
     use bytes::Bytes;
+    use futures::executor::block_on;
     use futures::executor::LocalPool;
     use futures::future::ok;
     use std::cell::Cell;
     use std::rc::Rc;
     use util::PairIO;
+
+    fn is_sync<T: Sync>() {}
+    fn is_send<T: Send>() {}
+
+    #[test]
+    fn test_bounds() {
+        is_send::<Frame>();
+        is_send::<Caller>();
+        is_send::<Handler>();
+        is_sync::<Frame>();
+        is_sync::<Caller>();
+        is_sync::<Handler>();
+    }
 
     #[test]
     fn simple_call() {
