@@ -41,8 +41,7 @@ where
 mod test {
     use super::*;
     use bytes::Bytes;
-    use futures::executor::block_on;
-    use futures::executor::LocalPool;
+    use futures::executor::{spawn, block_on};
     use futures::future::ok;
     use std::cell::Cell;
     use std::rc::Rc;
@@ -67,14 +66,8 @@ mod test {
         let (s1, s2) = PairIO::new();
         let (caller_echo, fut_echo) = s1.dialog(|_, req| Box::new(ok(req)));
         let (caller_del, fut_del) = s2.dialog(|_, _| Box::new(ok(Bytes::new())));
-        let mut pool = LocalPool::new();
-        let mut executor = pool.executor();
-        executor
-            .spawn_local(fut_del.map_err(|_| panic!("fut_del panic")))
-            .unwrap();
-        executor
-            .spawn_local(fut_echo.map_err(|_| panic!("fut_echo panic")))
-            .unwrap();
+        block_on(spawn(fut_del.map_err(|_| panic!("fut_del panic")))).unwrap();
+        block_on(spawn(fut_echo.map_err(|_| panic!("fut_echo panic")))).unwrap();
 
         let buf = Bytes::from(&b"asdf"[..]);
         let f1 = {
@@ -94,7 +87,7 @@ mod test {
                 ok(())
             })
         };
-        let _ = pool.run_until(f1.join(f2), &mut executor).unwrap();
+        let _ = block_on(f1.join(f2)).unwrap();
         assert_eq!(assert_count.get(), 2);
     }
 }

@@ -86,7 +86,7 @@ impl Sim {
 #[cfg(test)]
 mod test {
     use super::*;
-    use futures::executor::LocalPool;
+    use futures::executor::{spawn, block_on};
     use util::PairIO;
 
     fn is_sync<T: Sync>() {}
@@ -118,14 +118,8 @@ mod test {
         let (mut req1, fut1) = sim.add(io1);
         let (_req2, fut2) = sim.add(io2);
 
-        let mut pool = LocalPool::new();
-        let mut executor = pool.executor();
-        executor
-            .spawn_local(fut1.map_err(|e| panic!("fut1 panic {:?}", e)))
-            .unwrap();
-        executor
-            .spawn_local(fut2.map_err(|e| panic!("fut2 panic {:?}", e)))
-            .unwrap();
+        block_on(spawn(fut1.map_err(|e| panic!("fut1 panic {:?}", e)))).unwrap();
+        block_on(spawn(fut2.map_err(|e| panic!("fut2 panic {:?}", e)))).unwrap();
 
         let hello = BytesMut::from(r"hello").freeze();
         let f1 = req1.rpc(topic_del, hello.clone()).inspect(|(_, resp)| {
@@ -140,6 +134,6 @@ mod test {
         let f3 = req1
             .rpc(topic_echo, hello.clone())
             .inspect(|(_, resp)| assert_eq!(resp, &RpcResponse::Accepted(hello.clone())));
-        let _ = pool.run_until(f1.join(f2).join(f3), &mut executor).unwrap();
+        let _ = block_on(f1.join(f2).join(f3)).unwrap();
     }
 }
