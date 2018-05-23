@@ -20,14 +20,13 @@ impl Caller {
         }
     }
 
-    pub fn call(&self, request: Bytes) -> Box<Future<Item = (Caller, Bytes), Error = io::Error>> {
+    pub fn call(self, request: Bytes) -> Box<Future<Item = (Caller, Bytes), Error = io::Error>> {
         let (tx, rx) = oneshot::channel::<Bytes>();
-        let next_id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let handler_ch = self.handler_ch.clone();
-        let handler_ch_fut = handler_ch.send((next_id, tx, request));
-        let next_id = Arc::clone(&self.next_id);
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let Self {handler_ch, next_id} = self;
+        let handler_ch_fut = handler_ch.send((id, tx, request));
         Box::new(
-            handler_ch_fut.map_err(|e| io::Error::new(io::ErrorKind::Other, "send failed from dialog::caller"))
+            handler_ch_fut.map_err(|_| io::Error::new(io::ErrorKind::Other, "send failed from caller"))
             .and_then(|handler_ch| rx.map(|resp|(resp, handler_ch)).map_err(|_| panic!("oneshot tx dropped"))
                 .map(|(resp, handler_ch)| (Caller{handler_ch, next_id}, resp)),
             )

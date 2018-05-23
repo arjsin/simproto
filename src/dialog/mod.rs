@@ -18,7 +18,7 @@ use futures::prelude::*;
 pub trait Dialog {
     fn dialog<F>(self, f: F) -> (Caller, Handler)
     where
-        F: Fn(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>,
+        F: Fn(Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>,
         F: Send + Sync + 'static;
 }
 
@@ -28,12 +28,11 @@ where
 {
     fn dialog<F>(self, f: F) -> (Caller, Handler)
     where
-        F: Fn(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>,
+        F: Fn(Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>,
         F: Send + Sync + 'static,
     {
         let (tx, rx) = mpsc::channel(1);
-        let caller = Caller::new(tx);
-        (caller.clone(), Handler::new(self, rx, caller, f))
+        (Caller::new(tx), Handler::new(self, rx, f))
     }
 }
 
@@ -41,7 +40,7 @@ where
 mod test {
     use super::*;
     use bytes::Bytes;
-    use futures::executor::{spawn, block_on};
+    use futures::executor::{block_on, spawn};
     use futures::future::ok;
     use std::cell::Cell;
     use std::rc::Rc;
@@ -64,8 +63,8 @@ mod test {
     fn simple_call() {
         let assert_count = Rc::new(Cell::new(0));
         let (s1, s2) = PairIO::new();
-        let (caller_echo, fut_echo) = s1.dialog(|_, req| Box::new(ok(req)));
-        let (caller_del, fut_del) = s2.dialog(|_, _| Box::new(ok(Bytes::new())));
+        let (caller_echo, fut_echo) = s1.dialog(|req| Box::new(ok(req)));
+        let (caller_del, fut_del) = s2.dialog(|_| Box::new(ok(Bytes::new())));
         block_on(spawn(fut_del.map_err(|_| panic!("fut_del panic")))).unwrap();
         block_on(spawn(fut_echo.map_err(|_| panic!("fut_echo panic")))).unwrap();
 

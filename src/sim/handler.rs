@@ -1,11 +1,10 @@
-use super::requestor::Requestor;
 use bytes::Bytes;
 use futures::prelude::*;
 use std::collections::HashMap;
 use std::io;
 
 type RequestHandler = Box<
-    Fn(Requestor, Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>
+    Fn(Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>
         + Send
         + Sync,
 >;

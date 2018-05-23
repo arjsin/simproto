@@ -1,13 +1,11 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
 use std::sync::{Arc, Mutex};
 
-use super::Caller;
 use super::Codec;
 use super::{Frame, TypeLabel};
 
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use framed::framed::framed;
 use futures::channel::{mpsc, oneshot};
 use futures::future::ok;
@@ -22,11 +20,10 @@ impl Handler {
     pub fn new<F, A>(
         dialog_io: A,
         caller_ch: mpsc::Receiver<(usize, oneshot::Sender<Bytes>, Bytes)>,
-        caller: Caller,
         mut f: F,
     ) -> Handler
     where
-        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>,
+        F: FnMut(Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync>,
         F: Send + Sync + 'static,
         A: AsyncRead + AsyncWrite + Send + Sync + 'static,
     {
@@ -48,7 +45,7 @@ impl Handler {
 
         let dialog_stream = dialog_stream
             .and_then(move |message| {
-                Handler::receiver(message, &caller_resp_map, caller.clone(), &mut f)
+                Handler::receiver(message, &caller_resp_map, &mut f)
             })
             .filter_map(|x| Ok(x));
 
@@ -62,16 +59,15 @@ impl Handler {
     fn receiver<F>(
         message: Frame,
         sender_map: &Arc<Mutex<HashMap<usize, oneshot::Sender<Bytes>>>>,
-        caller: Caller,
         f: &mut F,
     ) -> Box<Future<Item = Option<Frame>, Error = io::Error> + Send + Sync>
     where
-        F: FnMut(Caller, Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync> + Send,
+        F: FnMut(Bytes) -> Box<Future<Item = Bytes, Error = io::Error> + Send + Sync> + Send,
     {
         let (t, id, payload) = message.into();
         match t {
             TypeLabel::Request => {
-                let send_fut = f(caller, payload)
+                let send_fut = f(payload)
                     .map(move |resp| Some(Frame::new(TypeLabel::Response, id, resp)));
                 Box::new(send_fut)
             }

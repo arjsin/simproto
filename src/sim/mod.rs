@@ -8,7 +8,7 @@ use self::message::{Response, RpcResponse};
 pub use self::requestor::Requestor;
 
 use bytes::{Bytes, BytesMut};
-use dialog::{Caller, Dialog};
+use dialog::Dialog;
 use futures::future::ok;
 use futures::io::{AsyncRead, AsyncWrite};
 use futures::prelude::*;
@@ -28,7 +28,7 @@ impl Sim {
         io: A,
     ) -> (Requestor, impl Future<Item = (), Error = io::Error>) {
         let handler = Arc::clone(&self.0);
-        let (caller, handler) = io.dialog(move |caller, request| {
+        let (caller, handler) = io.dialog(move |request| {
             let fut = match Request::from_bytes(request) {
                 Some(Request {
                     kind: RequestType::Rpc,
@@ -36,7 +36,7 @@ impl Sim {
                     message,
                 }) => {
                     let handler = &*handler;
-                    Self::rpc_handler(caller, handler, topic, message)
+                    Self::rpc_handler(handler, topic, message)
                         as Box<Future<Item = _, Error = _> + Send + Sync>
                 }
                 Some(Request {
@@ -67,15 +67,13 @@ impl Sim {
     }
 
     fn rpc_handler(
-        caller: Caller,
         handler: &Handler,
         topic: Bytes,
         message: Bytes,
     ) -> Box<Future<Item = Response, Error = io::Error> + Send + Sync> {
         match handler.get_rpc(&topic) {
             Some(call_handler) => Box::new(
-                call_handler(Requestor::new(caller), message)
-                    .map(|x| RpcResponse::Accepted(x).into()),
+                call_handler(message).map(|x| RpcResponse::Accepted(x).into()),
             ) as Box<Future<Item = _, Error = _> + Send + Sync>,
             None => Box::new(ok(RpcResponse::TopicNotFound.into()))
                 as Box<Future<Item = _, Error = _> + Send + Sync>,
@@ -86,7 +84,7 @@ impl Sim {
 #[cfg(test)]
 mod test {
     use super::*;
-    use futures::executor::{spawn, block_on};
+    use futures::executor::{block_on, spawn};
     use util::PairIO;
 
     fn is_sync<T: Sync>() {}
@@ -107,28 +105,32 @@ mod test {
         let mut handler = Handler::new();
         let topic_echo = BytesMut::from(r"echo").freeze();
         let topic_del = BytesMut::from(r"del").freeze();
-        handler.on_rpc(topic_echo.clone(), Box::new(|_, req| Box::new(ok(req))));
+        handler.on_rpc(topic_echo.clone(), Box::new(|req| Box::new(ok(req))));
         handler.on_rpc(
             topic_del.clone(),
-            Box::new(|_, _| Box::new(ok(BytesMut::from(&[] as &[u8]).freeze()))),
+            Box::new(|_| Box::new(ok(BytesMut::from(&[] as &[u8]).freeze()))),
         );
         let sim = Sim::new(handler);
 
         let (io1, io2) = PairIO::new();
-        let (mut req1, fut1) = sim.add(io1);
+        let (req1, fut1) = sim.add(io1);
         let (_req2, fut2) = sim.add(io2);
 
         block_on(spawn(fut1.map_err(|e| panic!("fut1 panic {:?}", e)))).unwrap();
         block_on(spawn(fut2.map_err(|e| panic!("fut2 panic {:?}", e)))).unwrap();
 
         let hello = BytesMut::from(r"hello").freeze();
-        let f1 = req1.rpc(topic_del, hello.clone()).inspect(|(_, resp)| {
-            assert_eq!(
-                resp,
-                &RpcResponse::Accepted(BytesMut::from(&[] as &[u8]).freeze())
-            )
-        });
+        let f1 = req1
+            .clone()
+            .rpc(topic_del, hello.clone())
+            .inspect(|(_, resp)| {
+                assert_eq!(
+                    resp,
+                    &RpcResponse::Accepted(BytesMut::from(&[] as &[u8]).freeze())
+                )
+            });
         let f2 = req1
+            .clone()
             .rpc(BytesMut::from(r"new").freeze(), hello.clone())
             .inspect(|(_, resp)| assert_eq!(resp, &RpcResponse::TopicNotFound));
         let f3 = req1

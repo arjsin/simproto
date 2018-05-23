@@ -4,9 +4,9 @@ use dialog::Caller;
 use futures::prelude::*;
 use std::io;
 
+#[derive(Clone)]
 pub struct Requestor {
     caller: Caller,
-    // TODO: list of sub
 }
 
 impl Requestor {
@@ -15,7 +15,7 @@ impl Requestor {
     }
 
     pub fn rpc(
-        &mut self,
+        self,
         topic: Bytes,
         data: Bytes,
     ) -> impl Future<Item = (Requestor, RpcResponse), Error = io::Error> {
