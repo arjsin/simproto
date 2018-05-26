@@ -1,6 +1,7 @@
 use std::io;
 use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use std::sync::Arc;
+use std::hash::{Hash, Hasher};
 
 use bytes::Bytes;
 use futures::channel::{mpsc, oneshot};
@@ -31,5 +32,19 @@ impl Caller {
                 .map(|(resp, handler_ch)| (Caller{handler_ch, next_id}, resp)),
             )
         )
+    }
+}
+
+impl PartialEq for Caller {
+    fn eq(&self, other: &Caller) -> bool {
+        Arc::ptr_eq(&self.next_id, &other.next_id)
+    }
+}
+
+impl Eq for Caller {}
+
+impl Hash for Caller {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (&*self.next_id as *const _).hash(state);
     }
 }
