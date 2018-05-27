@@ -45,6 +45,6 @@ impl Eq for Caller {}
 
 impl Hash for Caller {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (&*self.next_id as *const _).hash(state);
+        (&*self.next_id as *const AtomicUsize).hash(state);
     }
 }
