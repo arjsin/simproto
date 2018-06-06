@@ -1,5 +1,7 @@
 # SimProto
-A simple protocol.
+[![Build Status](https://travis-ci.org/arjsin/simproto.svg?branch=master)](https://travis-ci.org/arjsin/simproto)
+
+A symmetric and simple protocol.
 
 ## Goals
 * Build a protocol which is simple as well as useful.
