@@ -8,6 +8,7 @@ pub enum RequestType {
     Notification,
 }
 
+#[derive(Debug)]
 pub struct Request {
     pub kind: RequestType,
     pub topic: Bytes,

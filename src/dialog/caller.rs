@@ -21,15 +21,19 @@ impl Caller {
         }
     }
 
-    pub fn call(self, request: Bytes) -> Box<Future<Item = (Caller, Bytes), Error = io::Error>> {
+    pub fn call(
+        self,
+        request: Bytes
+    ) -> Box<Future<Item = (Caller, Bytes), Error = io::Error> + Send + Sync> {
         let (tx, rx) = oneshot::channel::<Bytes>();
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let Self {handler_ch, next_id} = self;
         let handler_ch_fut = handler_ch.send((id, tx, request));
         Box::new(
             handler_ch_fut.map_err(|_| io::Error::new(io::ErrorKind::Other, "send failed from caller"))
-            .and_then(|handler_ch| rx.map(|resp|(resp, handler_ch)).map_err(|_| panic!("oneshot tx dropped"))
-                .map(|(resp, handler_ch)| (Caller{handler_ch, next_id}, resp)),
+            .and_then(|handler_ch|{
+                 rx.map(|resp|(resp, handler_ch)).map_err(|_| panic!("oneshot tx dropped"))
+                .map(|(resp, handler_ch)| (Caller{handler_ch, next_id}, resp))}
             )
         )
     }
