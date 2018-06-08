@@ -34,12 +34,12 @@ impl Encoder for Codec {
 
     fn encode(&mut self, frame: Self::Item, buf: &mut BytesMut) -> io::Result<()> {
         let (t, id, payload) = frame.into();
-        let len = payload.len() as usize + 5;
+        let len = payload.len() as usize + 17;
         buf.reserve(len);
         buf.put_u8(t.into());
         buf.put_u64_le(payload.len() as u64);
         buf.put_u64_le(id);
-        buf.extend_from_slice(&payload);
+        buf.put_slice(&payload);
         Ok(())
     }
 }
