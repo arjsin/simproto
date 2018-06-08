@@ -3,7 +3,7 @@ mod message;
 mod requestor;
 
 pub use self::handler::Handler;
-use self::message::{
+pub use self::message::{
     NotificationResponse, Response, RpcResponse, SubscriptionResponse, UnsubscriptionResponse,
 };
 use self::message::{Request, RequestType};
@@ -22,15 +22,15 @@ use std::io;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-struct Sim(Arc<Handler>);
+pub struct Sim(Arc<Handler>);
 
 impl Sim {
-    fn new(h: Handler) -> Self {
+    pub fn new(h: Handler) -> Self {
         Sim(Arc::new(h))
     }
 
     #[allow(dead_code)]
-    fn add<A: AsyncRead + AsyncWrite + Send + Sync + 'static>(
+    pub fn add<A: AsyncRead + AsyncWrite + Send + Sync + 'static>(
         &self,
         io: A,
     ) -> (Requestor, impl Future<Item = (), Error = io::Error>) {
