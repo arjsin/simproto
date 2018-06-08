@@ -14,6 +14,7 @@ pub struct OneEndIO {
     out_ch: Sender<()>,
     in_pos: u64,
     flush: bool,
+    read_pending: bool,
 }
 
 impl OneEndIO {
@@ -25,6 +26,7 @@ impl OneEndIO {
             out_ch,
             in_pos: 0,
             flush: false,
+            read_pending: false,
         }
     }
 
@@ -38,8 +40,10 @@ impl OneEndIO {
             in_io.set_position(0);
             in_io.get_mut().clear();
             self.in_pos = 0;
+            self.read_pending = false;
         } else {
             in_io.set_position(old_pos);
+            self.read_pending = true;
         }
         read
     }
@@ -51,30 +55,37 @@ impl AsyncRead for OneEndIO {
         cx: &mut task::Context,
         buf: &mut [u8],
     ) -> Result<Async<usize>, io::Error> {
-        match self.in_ch.poll_next(cx) {
-            Ok(Async::Ready(Some(()))) => match self.read(buf) {
+        if self.read_pending {
+            match self.read(buf) {
                 Ok(t) => Ok(Async::Ready(t)),
                 Err(e) => return Err(e.into()),
-            },
-            Ok(Async::Ready(None)) => Ok(Async::Ready(0)),
-            Ok(Async::Pending) => Ok(Async::Pending),
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "unable to read channel",
-            )),
+            }
+        } else {
+            match self.in_ch.poll_next(cx) {
+                Ok(Async::Ready(Some(()))) => match self.read(buf) {
+                    Ok(t) => Ok(Async::Ready(t)),
+                    Err(e) => return Err(e.into()),
+                },
+                Ok(Async::Ready(None)) => Ok(Async::Ready(0)),
+                Ok(Async::Pending) => Ok(Async::Pending),
+                Err(_) => Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "unable to read channel",
+                )),
+            }
         }
     }
 }
 
 impl AsyncWrite for OneEndIO {
     fn poll_write(&mut self, _: &mut task::Context, buf: &[u8]) -> Result<Async<usize>, io::Error> {
-            match io::Write::write(&mut *self.out_io.lock().unwrap(), buf) {
-                Ok(x) => {
-                    self.flush = true;
-                    Ok(Async::Ready(x))
-                }
-                Err(e) => Err(e),
+        match io::Write::write(&mut *self.out_io.lock().unwrap(), buf) {
+            Ok(x) => {
+                self.flush = true;
+                Ok(Async::Ready(x))
             }
+            Err(e) => Err(e),
+        }
     }
 
     fn poll_flush(&mut self, cx: &mut task::Context) -> Poll<(), io::Error> {
