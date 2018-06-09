@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use super::Codec;
 use super::{Frame, TypeLabel};
@@ -11,6 +11,7 @@ use futures::channel::{mpsc, oneshot};
 use futures::future::ok;
 use futures::io::{AsyncRead, AsyncWrite};
 use futures::prelude::*;
+use parking_lot::Mutex;
 
 pub struct Handler {
     f: Box<Future<Item = (), Error = io::Error> + Send + Sync>,
@@ -37,16 +38,14 @@ impl Handler {
             caller_ch
                 .map(move |data| {
                     let (id, oneshot, message) = data;
-                    caller_resp_map.lock().unwrap().insert(id, oneshot);
+                    caller_resp_map.lock().insert(id, oneshot);
                     Frame::new(TypeLabel::Request, id as u64, message)
                 })
                 .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "caller channel broken"))
         };
 
         let dialog_stream = dialog_stream
-            .and_then(move |message| {
-                Handler::receiver(message, &caller_resp_map, &mut f)
-            })
+            .and_then(move |message| Handler::receiver(message, &caller_resp_map, &mut f))
             .filter_map(|x| Ok(x));
 
         let fut = dialog_sink
@@ -67,12 +66,12 @@ impl Handler {
         let (t, id, payload) = message.into();
         match t {
             TypeLabel::Request => {
-                let send_fut = f(payload)
-                    .map(move |resp| Some(Frame::new(TypeLabel::Response, id, resp)));
+                let send_fut =
+                    f(payload).map(move |resp| Some(Frame::new(TypeLabel::Response, id, resp)));
                 Box::new(send_fut)
             }
             TypeLabel::Response => {
-                if let Some(mut c) = sender_map.lock().unwrap().remove(&(id as usize)) {
+                if let Some(mut c) = sender_map.lock().remove(&(id as usize)) {
                     let _ = c.send(payload);
                 }
                 Box::new(ok(None))

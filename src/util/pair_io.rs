@@ -2,8 +2,9 @@ extern crate futures;
 
 use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::prelude::*;
+use parking_lot::Mutex;
 use std::io::{self, Cursor};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 type InMemIO = Arc<Mutex<Cursor<Vec<u8>>>>;
 
@@ -31,7 +32,7 @@ impl OneEndIO {
     }
 
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut in_io = self.in_io.lock().unwrap();
+        let mut in_io = self.in_io.lock();
         let old_pos = in_io.position();
         in_io.set_position(self.in_pos);
         let read = io::Read::read(&mut *in_io, buf);
@@ -79,7 +80,7 @@ impl AsyncRead for OneEndIO {
 
 impl AsyncWrite for OneEndIO {
     fn poll_write(&mut self, _: &mut task::Context, buf: &[u8]) -> Result<Async<usize>, io::Error> {
-        match io::Write::write(&mut *self.out_io.lock().unwrap(), buf) {
+        match io::Write::write(&mut *self.out_io.lock(), buf) {
             Ok(x) => {
                 self.flush = true;
                 Ok(Async::Ready(x))
