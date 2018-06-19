@@ -8,7 +8,7 @@ use bytes::BytesMut;
 use futures::executor::{block_on, spawn};
 use futures::future::ok;
 use futures::prelude::*;
-use simproto::sim::{Handler, Sim};
+use simproto::sim::{Handler, Sim, SubscriptionResponse};
 use simproto::util::PairIO;
 use test::{black_box, Bencher};
 
@@ -24,14 +24,12 @@ fn rpc(b: &mut Bencher) {
     block_on(spawn(fut.map_err(|e| panic!("io1 sim fut panic {:?}", e)))).unwrap();
 
     let (_req2, fut) = sim.add(io2);
-    block_on(spawn(fut.map_err(|e| panic!("io1 sim fut panic {:?}", e)))).unwrap();
+    block_on(spawn(fut.map_err(|e| panic!("io2 sim fut panic {:?}", e)))).unwrap();
 
     let hello = BytesMut::from(r"hello").freeze();
     let req1 = black_box(req1);
     b.iter(|| {
-        let f = req1
-            .clone()
-            .rpc(topic_echo.clone(), hello.clone());
+        let f = req1.clone().rpc(topic_echo.clone(), hello.clone());
         let _ = block_on(f).unwrap();
     });
 }

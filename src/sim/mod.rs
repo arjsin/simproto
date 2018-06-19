@@ -182,7 +182,7 @@ mod test {
         block_on(spawn(fut.map_err(|e| panic!("io1 sim fut panic {:?}", e)))).unwrap();
 
         let (_req2, fut) = sim.add(io2);
-        block_on(spawn(fut.map_err(|e| panic!("io1 sim fut panic {:?}", e)))).unwrap();
+        block_on(spawn(fut.map_err(|e| panic!("io2 sim fut panic {:?}", e)))).unwrap();
 
         let hello = BytesMut::from(r"hello").freeze();
         let f1 = req1
