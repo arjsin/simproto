@@ -13,5 +13,5 @@ framed = { version = "0.1", path = "framed" }
 
 bytes = "0.4.7"
 crossbeam = "0.3"
-futures = "0.2.1"
+futures = { git = "https://github.com/rust-lang-nursery/futures-rs", tag = "0.2.1" }
 parking_lot = "0.5"
